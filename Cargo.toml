@@ -1,0 +1,11 @@
+[package]
+name = "dnstrace"
+version = "0.1.0"
+authors = ["David Jonas <djonas@noip.com>"]
+
+[dependencies]
+chrono = "0.4.6"
+futures = "0.1.25"
+tokio = "0.1.11"
+trust-dns = "0.15"
+
