@@ -3,43 +3,61 @@ extern crate futures;
 extern crate tokio;
 extern crate trust_dns;
 
-use std::net::Ipv4Addr;
-use std::net::SocketAddr;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::str::FromStr;
 use std::time::{Duration, Instant};
 
-//use futures::future::lazy;
-use futures::Future;
-use tokio::prelude::future::lazy;
+use futures::future::{lazy, ok};
+use futures::{try_ready, Async, Future, Poll};
 use tokio::runtime::current_thread::Runtime;
 use trust_dns::client::{ClientFuture, ClientHandle};
-use trust_dns::rr::{DNSClass, Name, RData, RecordType};
+use trust_dns::rr::{DNSClass, Name, RData, Record, RecordType};
 use trust_dns::udp::UdpClientStream;
 
-struct TimedFutureResult<T, E> {
-    elapsed: Duration,
-    result: Result<T, E>,
+struct Timed<Fut, F>
+where
+    Fut: Future,
+    F: FnMut(&Fut::Item, Duration),
+{
+    inner: Fut,
+    f: F,
+    start: Option<Instant>,
 }
 
-impl<T, E> TimedFutureResult<T, E> {
-    pub fn elapsed_ms(&self) -> i64 {
-        return (self.elapsed.as_secs() * 1000 + (self.elapsed.subsec_nanos() / 1000000) as u64)
-            as i64;
+impl<Fut, F> Future for Timed<Fut, F>
+where
+    Fut: Future,
+    F: FnMut(&Fut::Item, Duration),
+{
+    type Item = Fut::Item;
+    type Error = Fut::Error;
+
+    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        let start = self.start.get_or_insert_with(Instant::now);
+
+        let v = try_ready!(self.inner.poll());
+
+        let elapsed = start.elapsed();
+        (self.f)(&v, elapsed);
+
+        Ok(Async::Ready(v))
     }
 }
 
-fn time_future<F: Future>(f: F) -> impl Future<Item = TimedFutureResult<F::Item, F::Error>> {
-    lazy(|| {
-        let start = Instant::now();
-
-        f.then(move |result| {
-            futures::future::ok::<TimedFutureResult<F::Item, F::Error>, ()>(TimedFutureResult {
-                elapsed: start.elapsed(),
-                result: result,
-            })
-        })
-    })
+trait TimedExt: Sized + Future {
+    fn timed<F>(self, f: F) -> Timed<Self, F>
+    where
+        F: FnMut(&Self::Item, Duration),
+    {
+        Timed {
+            inner: self,
+            f,
+            start: None,
+        }
+    }
 }
+
+impl<F: Future> TimedExt for F {}
 
 fn lookup_a(
     ns: SocketAddr,
