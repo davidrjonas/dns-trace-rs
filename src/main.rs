@@ -94,47 +94,68 @@ fn lookup_a(
     })
 }
 
-    tokio::spawn(bg);
+#[derive(Debug, Clone)]
+struct Authority {
+    name: Name,
+    addr: Option<SocketAddr>,
+}
 
-    let res = client.query(qname, DNSClass::IN, RecordType::A);
-
-    res.and_then(|response| {
-        let answers = response.answers();
-
-        if answers.len() == 0 {
-            return futures::future::err(
-                trust_dns::error::ClientErrorKind::Msg("No answers".to_string()).into(),
-            );
+fn find_socketaddr_for_name(query: &Name, recs: &[Record]) -> Option<SocketAddr> {
+    recs.iter().find_map(|ref rec| {
+        if rec.name() != query {
+            return None;
         }
+        match rec.rdata() {
+            &RData::A(ip) => return Some(SocketAddr::new(IpAddr::V4(ip), 53)),
+            &RData::AAAA(ip) => return Some(SocketAddr::new(IpAddr::V6(ip), 53)),
+            _ => None,
+        }
+    })
+}
 
-        return match answers[0].rdata() {
-            &RData::A(ref ip) => futures::future::ok(*ip),
-            record => futures::future::err(
-                trust_dns::error::ClientErrorKind::Msg(
-                    format!("Unexpected answer type; {}", record.to_record_type()).to_string(),
-                )
-                .into(),
-            ),
-        };
+fn lookup_authority(
+    ns: SocketAddr,
+    qname: Name,
+) -> impl Future<Item = Vec<Authority>, Error = trust_dns::error::ClientError> {
+    lazy(move || {
+        let (stream, handle) = UdpClientStream::new(ns);
+        let (bg, mut client) = ClientFuture::new(stream, handle, None);
+
+        tokio::spawn(bg);
+
+        client
+            .query(qname, DNSClass::IN, RecordType::A)
+            .and_then(|response| {
+                let authority = response.name_servers();
+                let additional = response.additionals();
+
+                ok(authority
+                    .iter()
+                    .filter_map(|ref record| match record.rdata() {
+                        &RData::NS(ref name) => Some(Authority {
+                            name: name.clone(),
+                            addr: find_socketaddr_for_name(name, additional),
+                        }),
+                        _ => None,
+                    })
+                    .collect())
+            })
     })
 }
 
 fn main() {
     let mut runtime = Runtime::new().unwrap();
+
     let nsaddr = ([8, 8, 8, 8], 53).into();
+    let root = ([192, 48, 79, 30], 53).into(); // j.gtld-servers.net.
     let qname = Name::from_str("noip.com").unwrap();
 
-    /*
-    let f = time_future(lookup_a(nsaddr, qname)).then(|r| match r {
-        Ok(r) => {
-            println!("resolved in {}ms", r.elapsed_ms());
-            r.result
-        }
-        _ => unreachable!(),
-    });
-    */
-
-    let ip = runtime.block_on(lazy(|| lookup_a(nsaddr, qname))).unwrap();
-    //let ip = runtime.block_on(f).unwrap();
+    let ip = runtime
+        .block_on(lookup_a(nsaddr, qname.clone()).timed(|_, dur| println!("resolved in {:?}", dur)))
+        .unwrap();
     println!("IP: {}", ip);
+    let auth = runtime
+        .block_on(lookup_authority(root, qname).timed(|_, dur| println!("resolved in {:?}", dur)))
+        .unwrap();
+    println!("Auth: {:?}", auth);
 }
