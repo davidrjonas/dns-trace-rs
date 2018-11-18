@@ -34,7 +34,7 @@ impl fmt::Display for Step {
             Ok(ref resp) => {
                 let answer = if resp.answer_count() > 0 {
                     match resp.answers()[0].rdata() {
-                        &RData::A(ip) => ip.to_string(),
+                        RData::A(ip) => ip.to_string(),
                         _ => "Unknown".to_string(),
                     }
                 } else {
@@ -43,11 +43,10 @@ impl fmt::Display for Step {
 
                 write!(
                     f,
-                    "{}: {:?}, code: {:?}, answers: {}, authority: {}, answer: {}",
+                    "{}: {:?}, code: {:?}, authority: {}, answer: {}",
                     self.source,
                     self.elapsed,
                     resp.response_code(),
-                    resp.answer_count(),
                     resp.name_server_count(),
                     answer
                 )
@@ -73,7 +72,7 @@ impl fmt::Display for Authority {
             self.name,
             self.addr
                 .map(|addr| addr.to_string())
-                .unwrap_or("Unknown".to_string())
+                .unwrap_or_else(|| "Unknown".to_string())
         )
     }
 }
@@ -169,8 +168,8 @@ fn find_socketaddr_for_name(query: &Name, recs: &[Record]) -> Option<SocketAddr>
             return None;
         }
         match rec.rdata() {
-            &RData::A(ip) => Some(SocketAddr::new(IpAddr::V4(ip), 53)),
-            &RData::AAAA(ip) => Some(SocketAddr::new(IpAddr::V6(ip), 53)),
+            RData::A(ip) => Some(SocketAddr::new(IpAddr::V4(*ip), 53)),
+            RData::AAAA(ip) => Some(SocketAddr::new(IpAddr::V6(*ip), 53)),
             _ => None,
         }
     })
@@ -183,7 +182,7 @@ fn dns_response_to_ns(res: &DnsResponse) -> Vec<Authority> {
     authority
         .iter()
         .filter_map(|ref record| match record.rdata() {
-            &RData::NS(ref name) => Some(Authority {
+            RData::NS(ref name) => Some(Authority {
                 name: name.clone(),
                 addr: find_socketaddr_for_name(name, additional),
             }),
@@ -241,8 +240,8 @@ impl Future for DnsTrace {
 
         let step = Step {
             source: self.current.as_ref().unwrap().clone(),
-            result: result,
             elapsed: self.start.elapsed(),
+            result,
         };
 
         let mut done = false;
@@ -267,16 +266,14 @@ impl Future for DnsTrace {
         if done {
             let steps = mem::replace(&mut self.steps, Vec::new());
             Ok(Async::Ready(steps))
+        } else if self.ns.is_empty() {
+            let steps = mem::replace(&mut self.steps, Vec::new());
+            Err(Error::DeadEnd(steps))
+        } else if self.steps.len() >= MAX_STEPS {
+            let steps = mem::replace(&mut self.steps, Vec::new());
+            Err(Error::TooManySteps(steps))
         } else {
-            if self.ns.is_empty() {
-                let steps = mem::replace(&mut self.steps, Vec::new());
-                Err(Error::DeadEnd(steps))
-            } else if self.steps.len() >= MAX_STEPS {
-                let steps = mem::replace(&mut self.steps, Vec::new());
-                Err(Error::TooManySteps(steps))
-            } else {
-                Ok(Async::NotReady)
-            }
+            Ok(Async::NotReady)
         }
     }
 }
@@ -288,7 +285,7 @@ pub fn trace(qname: &Name, progress: Option<ProgressFn>) -> DnsTrace {
         name: qname.clone(),
         progress_fn: progress,
         steps: vec![],
-        ns: ns,
+        ns,
         current: None,
         pending: None,
         start: Instant::now(),
