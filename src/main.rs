@@ -1,5 +1,6 @@
 extern crate chrono;
 extern crate futures;
+extern crate rand;
 extern crate tokio;
 extern crate trust_dns;
 extern crate trust_dns_proto;

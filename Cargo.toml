@@ -6,6 +6,7 @@ authors = ["David Jonas <djonas@noip.com>"]
 [dependencies]
 chrono = "0.4.6"
 futures = "0.1.25"
+rand = "0.5.5"
 tokio = "0.1.11"
 trust-dns = "0.15"
 trust-dns-proto = "0.5.0"

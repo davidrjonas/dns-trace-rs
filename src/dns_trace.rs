@@ -5,6 +5,7 @@ use std::time::{Duration, Instant};
 
 use futures::future::{err, ok};
 use futures::{Async, Future, Poll};
+use rand::Rng; // for shuffle
 use trust_dns::error::{ClientError, ClientErrorKind};
 use trust_dns::rr::{DNSClass, Name, RData, Record, RecordType};
 //use trust_dns_proto::op::response_code::ResponseCode;
@@ -279,7 +280,8 @@ impl Future for DnsTrace {
 }
 
 pub fn trace(qname: &Name, progress: Option<ProgressFn>) -> DnsTrace {
-    let ns = Authority::root_hints();
+    let mut ns = Authority::root_hints();
+    rand::thread_rng().shuffle(&mut ns);
 
     DnsTrace {
         name: qname.clone(),
