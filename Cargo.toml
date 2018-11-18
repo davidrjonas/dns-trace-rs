@@ -4,7 +4,7 @@ version = "0.1.0"
 authors = ["David Jonas <djonas@noip.com>"]
 
 [dependencies]
-chrono = "0.4.6"
+clap = "2.32.0"
 futures = "0.1.25"
 rand = "0.5.5"
 tokio = "0.1.11"
