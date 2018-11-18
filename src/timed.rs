@@ -12,6 +12,16 @@ where
     start: Option<Instant>,
 }
 
+impl<Fut, F> Timed<Fut, F>
+where
+    Fut: Future,
+    F: FnMut(&Fut::Item, Duration),
+{
+    pub fn elapsed(&mut self) -> Duration {
+        self.start.unwrap_or(Instant::now()).elapsed()
+    }
+}
+
 impl<Fut, F> Future for Timed<Fut, F>
 where
     Fut: Future,

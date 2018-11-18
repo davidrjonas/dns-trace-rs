@@ -1,6 +1,7 @@
 use std::fmt;
 use std::mem;
 use std::net::{IpAddr, SocketAddr};
+use std::time::{Duration, Instant};
 
 use futures::future::{err, ok};
 use futures::{Async, Future, Poll};
@@ -24,6 +25,7 @@ pub enum Error {
 pub struct Step {
     pub source: Authority,
     pub result: Result<DnsResponse, ClientError>,
+    pub elapsed: Duration,
 }
 
 impl fmt::Display for Step {
@@ -41,8 +43,9 @@ impl fmt::Display for Step {
 
                 write!(
                     f,
-                    "{}: code: {:?}, answers: {}, authority: {}, answer: {}",
+                    "{}: {:?}, code: {:?}, answers: {}, authority: {}, answer: {}",
                     self.source,
+                    self.elapsed,
                     resp.response_code(),
                     resp.answer_count(),
                     resp.name_server_count(),
@@ -196,10 +199,12 @@ pub struct DnsTrace {
     steps: Vec<Step>,
     current: Option<Authority>,
     pending: Option<Box<Future<Item = DnsResponse, Error = ClientError>>>,
+    start: Instant,
 }
 
 impl DnsTrace {
     fn promote_lookup(&mut self) {
+        self.start = Instant::now();
         self.current = self.ns.pop();
         self.pending = match self.current {
             Some(ref ns) => Some(Box::new(ns.lookup(&self.name))),
@@ -237,6 +242,7 @@ impl Future for DnsTrace {
         let step = Step {
             source: self.current.as_ref().unwrap().clone(),
             result: result,
+            elapsed: self.start.elapsed(),
         };
 
         let mut done = false;
@@ -285,5 +291,6 @@ pub fn trace(qname: &Name, progress: Option<ProgressFn>) -> DnsTrace {
         ns: ns,
         current: None,
         pending: None,
+        start: Instant::now(),
     }
 }

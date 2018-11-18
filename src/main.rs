@@ -13,9 +13,6 @@ use trust_dns::rr::Name;
 mod dns_trace;
 use dns_trace::trace;
 
-//mod timed;
-//use timed::TimedExt;
-
 fn main() {
     let mut runtime = Runtime::new().unwrap();
 
